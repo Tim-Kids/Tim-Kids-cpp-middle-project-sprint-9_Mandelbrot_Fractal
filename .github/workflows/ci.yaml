@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t mandelbrot-ci:latest .
+
+      - name: Configure (Release)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            mandelbrot-ci:latest \
+            bash -lc "
+              cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=Release
+            "
+
+      - name: Build
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            mandelbrot-ci:latest \
+            bash -lc "
+              cmake --build build -j$(nproc)
+            "
+
+      - name: Run unit tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/build \
+            mandelbrot-ci:latest \
+            bash -lc "
+              ctest --output-on-failure
+            "
+
+  asan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t mandelbrot-ci:latest .
+
+      - name: Configure (ASAN)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            mandelbrot-ci:latest \
+            bash -lc "
+              cmake -S . -B build-asan \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_CXX_FLAGS='-fsanitize=address -fno-omit-frame-pointer' \
+                -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address' \
+                -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address'
+            "
+
+      - name: Build (ASAN)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            mandelbrot-ci:latest \
+            bash -lc "
+              cmake --build build-asan -j$(nproc)
+            "
+
+      - name: Run unit tests (ASAN)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/build-asan \
+            mandelbrot-ci:latest \
+            bash -lc "
+              ASAN_OPTIONS=detect_leaks=1 \
+              ctest --output-on-failure
+            "
