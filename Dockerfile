@@ -42,7 +42,7 @@ RUN apt update && apt install -y \
 # NVIDIA stdexec library
 RUN git clone https://github.com/NVIDIA/stdexec.git /tmp/stdexec && \
     cd /tmp/stdexec && \
-    git checkout 6b6b8a4 && \
+    git checkout 1f63796 && \
     cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DSTDEXEC_ENABLE_TESTING=OFF \
