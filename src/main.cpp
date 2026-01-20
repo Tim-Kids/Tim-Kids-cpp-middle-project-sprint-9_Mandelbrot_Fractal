@@ -15,36 +15,48 @@
 
 using namespace std::chrono_literals;
 class FrameClock {
-public:
-    FrameClock() { Reset(); }
+    public:
+    FrameClock() {
+        Reset();
+    }
 
-    void Reset() noexcept { frame_start_ = std::chrono::steady_clock::now(); }
-    auto GetFrameTime() const noexcept { return std::chrono::steady_clock::now() - frame_start_; }
+    void Reset() noexcept {
+        frame_start_ = std::chrono::steady_clock::now();
+    }
+    auto GetFrameTime() const noexcept {
+        return std::chrono::steady_clock::now() - frame_start_;
+    }
 
-private:
+    private:
     std::chrono::time_point<std::chrono::steady_clock> frame_start_;
 };
 
 class WaitForFPS {
-public:
+    public:
+    explicit WaitForFPS(FrameClock& clock, int fps) noexcept:
+        clock_(clock),
+        target_(std::chrono::duration<double, std::milli>(1000.0 / fps)) {}
 
+    void operator()() noexcept {
+        const auto elapsed = clock_.GetFrameTime();
+        if(elapsed < target_) {
+            // Засыпаем, чтобы выравнить частоту отображения кадров.
+            std::this_thread::sleep_for(target_ - elapsed);
+        }
+        // Сбрасываем таймер текущего кадра.
+        clock_.Reset();
+    }
+
+    private:
+    FrameClock& clock_;
+    std::chrono::duration<double, std::milli> target_;
 };
 
 class MandelbrotApp {
-private:
-    RenderSettings render_settings_{.width = 800, .height = 600, .max_iterations = 100, .escape_radius = 2.0};
-
-    sf::RenderWindow window_;
-    sf::Image image_;
-    sf::Texture texture_;
-    sf::Sprite sprite_;
-    MandelbrotRenderer renderer_;
-    AppState state_;
-
-public:
-    MandelbrotApp()
-        : window_{sf::VideoMode{render_settings_.width, render_settings_.height}, "Mandelbrot Fractal"},
-          renderer_{THREAD_POOL_SIZE} {
+    public:
+    MandelbrotApp():
+        window_ {sf::VideoMode {render_settings_.width, render_settings_.height}, "Mandelbrot Fractal"},
+        renderer_ {THREAD_POOL_SIZE} {
 
         image_.create(render_settings_.width, render_settings_.height);
         texture_.create(render_settings_.width, render_settings_.height);
@@ -56,27 +68,43 @@ public:
         FrameClock frame_clock;
         sf::Clock zoom_clock;
 
-        auto pipeline = SfmlEventHandler{window_, render_settings_, state_, zoom_clock} |  //
-                        stdexec::let_value([this]() {                                      //
-                            return CalculateMandelbrotAsyncSender{state_, render_settings_, renderer_};
+        static_assert(stdexec::sender<SFMLRender>);
+
+        auto pipeline = SfmlEventHandler {window_, render_settings_, state_, zoom_clock} | stdexec::let_value([this]() {
+                            return CalculateMandelbrotAsyncSender {state_, render_settings_, renderer_};
                         }) |
                         stdexec::let_value([this](RenderResult data) {
-                            return SFMLRender{std::move(data), image_, texture_, sprite_, window_, render_settings_};
-                        }) |  //
-                        stdexec::then(WaitForFPS{frame_clock, 60});
+                            return SFMLRender {std::move(data), image_, texture_, sprite_, window_, render_settings_};
+                        }) |
+                        // WaitForFPS отслеживает длительность отрисовки, и , при необходимости, усыпляет поток, чтобы
+                        // сохранять чистоту отображения кадров 60 fps.
+                        stdexec::then(WaitForFPS {frame_clock, 60});
 
         auto repeated_pipeline =
-            std::move(pipeline) | stdexec::then([this]() { return state_.should_exit; }) | exec::repeat_effect_until();
+            std::move(pipeline) | stdexec::then([this]() { return state_.should_exit; }) |
+            exec::repeat_effect_until();  // Если state_.should_exit = true, то прекращает выполнение, корректно
+                                          // завершая выполнение всех OperationState командой set_stopped в upstream.
 
         stdexec::sync_wait(std::move(repeated_pipeline));
     }
+
+    private:
+    RenderSettings render_settings_ {.width = 800, .height = 600, .max_iterations = 100, .escape_radius = 2.0};
+
+    sf::RenderWindow window_;
+    sf::Image image_;
+    sf::Texture texture_;
+    sf::Sprite sprite_;
+    MandelbrotRenderer renderer_;
+    AppState state_;
 };
 
 int main() {
     try {
         MandelbrotApp app;
         app.Run();
-    } catch (const std::exception &e) {
+    }
+    catch(const std::exception& e) {
         std::println("Error: {}", e.what());
         return 1;
     }

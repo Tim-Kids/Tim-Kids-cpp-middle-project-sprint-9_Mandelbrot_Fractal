@@ -1,128 +1,142 @@
-# cpp-middle-project-sprint-9 <!-- omit in toc -->
+# Mandelbrot Fractal — stdexec & SFML
 
-- [До начала использования Docker контейнера: Настройка переменных окружения](#до-начала-использования-docker-контейнера-настройка-переменных-окружения)
-- [Начало работы](#начало-работы)
-- [Сборка проекта и запуск тестов](#сборка-проекта-и-запуск-тестов)
-  - [Команды для сборки проекта](#команды-для-сборки-проекта)
-  - [Команды для запуска приложения](#команды-для-запуска-приложения)
-  - [Команда для запуска тестов](#команда-для-запуска-тестов)
-  - [Команда для запуска clang-format — обязательное требование перед сдачей работы на ревью](#команда-для-запуска-clang-format--обязательное-требование-перед-сдачей-работы-на-ревью)
-  - [Команды для запуска отладчика](#команды-для-запуска-отладчика)
-- [Дополнительно](#дополнительно)
+[![CI](https://github.com/<YOUR_GITHUB_USERNAME>/MandelbrotFractal/actions/workflows/ci.yml/badge.svg)](https://github.com/<YOUR_GITHUB_USERNAME>/MandelbrotFractal/actions/workflows/ci.yml)
+![ASAN](https://img.shields.io/badge/ASAN-enabled-brightgreen)
+![clang--tidy](https://img.shields.io/badge/clang--tidy-enabled-blue)
+![C++23](https://img.shields.io/badge/C%2B%2B-23-blue)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+A modern **C++23** implementation of the **Mandelbrot fractal renderer** built around **NVIDIA stdexec** sender/receiver model, structural parallelism, and an explicit execution pipeline.
 
-Шаблон репозитория для практического задания 9-го спринта «Мидл разработчик С++»
+The project demonstrates how to design a non‑trivial asynchronous rendering pipeline with clear ownership, deterministic shutdown, and testable execution semantics — without relying on futures or callbacks. It is intended as a **public reference implementation** of modern C++ sender/receiver architecture applied to a real graphical workload.
 
-## До начала использования Docker контейнера: Настройка переменных окружения
+---
 
-Для корректной работы контейнера добавьте в ваш bash-профиль две переменные окружения и обновите его, выполнив следующие команды:
+## Key Features
 
-```bash
-# Set USER_UID and USER_GID
-echo -e '\nexport USER_UID=$(id -u)\nexport USER_GID=$(id -g)' >> ~/.bashrc
+* **Asynchronous rendering pipeline** based on `stdexec` senders/receivers
+* **Structural parallelism** via `exec::static_thread_pool`
+* **Deterministic frame scheduling** (fixed FPS)
+* **Interactive zoom in / zoom out** (mouse‑driven)
+* **Zero GUI logic in tests** (headless validation)
+* **Memory‑safe by design** (ASAN‑verified)
 
-# Update bash-profile
-source ~/.bashrc
+---
+
+## Architecture Overview
+
+The application is structured as a composable execution pipeline:
+
+```
+SfmlEventHandler
+    → CalculateMandelbrotAsyncSender
+        → MandelbrotRenderer::RenderAsync
+            → MandelbrotSender (N stripes, parallel)
+    → SFMLRender
+    → WaitForFPS
 ```
 
-Перед началом работы с Docker контейнером, убедитесь, что переменные окружения доступны, внутри используемой вами IDE (например в терминале внутри VS Code):
+### Core Components
+
+| Component                        | Responsibility                                       |
+| -------------------------------- | ---------------------------------------------------- |
+| `SfmlEventHandler`               | Event handling, zoom logic, viewport updates         |
+| `MandelbrotSender`               | Iteration computation for a pixel region             |
+| `MandelbrotRenderer`             | Parallel rendering, stripe scheduling, color mapping |
+| `CalculateMandelbrotAsyncSender` | Conditional re‑render adapter                        |
+| `SFMLRender`                     | Frame upload and presentation                        |
+| `WaitForFPS`                     | Frame pacing (fixed FPS)                             |
+
+All components are **pure senders** with explicit completion semantics (`set_value`, `set_error`, `set_stopped`).
+
+---
+
+## Parallel Rendering Model
+
+* The screen is split into **N horizontal stripes**
+* Each stripe is processed by an independent `MandelbrotSender`
+* Stripes are executed concurrently on a static thread pool
+* Results are merged deterministically into a single frame
+* Color buffer is allocated **once** and reused across frames
+
+This approach avoids false sharing, repeated allocations, and hidden synchronization.
+
+---
+
+## Testing Strategy
+
+The project includes **unit and integration tests** covering:
+
+* Individual senders (`MandelbrotSender`, `RenderAsync`)
+* Pipeline composition
+* Correct propagation of:
+
+  * `set_value`
+  * `set_error`
+  * `set_stopped`
+* Custom user receivers with shared state
+
+All tests are **headless** and CI‑friendly.
+
+---
+
+## Continuous Integration
+
+The repository is equipped with a production‑grade CI pipeline:
+
+* **Release build + unit tests**
+* **ASAN job** (AddressSanitizer, Debug build)
+* **clang‑tidy static analysis**
+* **Docker‑based environment** for full reproducibility
+
+CI validates correctness, memory safety, and code quality on every PR.
+
+---
+
+## Build & Run
+
+### Requirements
+
+* C++23 compatible compiler (GCC ≥ 15 / Clang ≥ 19)
+* CMake ≥ 3.30
+* SFML
+* NVIDIA stdexec
+* GoogleTest
+* Matplot++ (dependency requirement)
+
+### Build
 
 ```bash
-printf "\nUSER_UID=${USER_UID=}\nUSER_GID=${USER_GID}\n\n"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 ```
 
-## Начало работы
-
-1. Убедитесь, что переменные окружения из предыдущего шага доступны внутри вашей IDE
-2. Нажмите зелёную кнопку `Use this template`, затем `Create a new repository`.
-3. Назовите свой репозиторий.
-4. Склонируйте созданный репозиторий командой `git clone your-repository-name`.
-5. Создайте новую ветку командой `git switch -c development`.
-6. Откройте проект в `Visual Studio Code`.
-7. Нажмите `F1` и откройте проект в dev-контейнере командой `Dev Containers: Reopen in Container`.
-
-![Reopen in container](misc/reopen_in_container.png)
-
-## Сборка проекта и запуск тестов
-
-Данный репозиторий использует следующие инструменты:
-
-- **Conan** — свободный менеджер пакетов для C и C++ с открытым исходным кодом (MIT). Позволяет настраивать процесс сборки программ, скачивать и устанавливать сторонние зависимости и необходимые инструменты. Подробнее о Conan:
-  - https://habr.com/ru/articles/884464
-  - https://docs.conan.io/2.0/tutorial/consuming_packages/build_simple_cmake_project.html
-  - https://docs.conan.io/2.0/tutorial/consuming_packages/the_flexibility_of_conanfile_py.html
-
-- **CPM.cmake** - CMake dependency manager. Поскольку не все пакеты доступны в `Conan`, в качестве альтернативы удобно воспользоваться `CPM.cmake`
-  - https://github.com/cpm-cmake/CPM.cmake
-
-- **cmake** — генератор систем сборки для C и C++. Позволяет создавать проекты, которые могут компилироваться на различных платформах и с различными компиляторами. Подробнее о cmake:
-  - https://dzen.ru/a/ZzZGUm-4o0u-IQlb
-  - https://neerc.ifmo.ru/wiki/index.php?title=CMake_Tutorial
-  - https://cmake.org/cmake/help/book/mastering-cmake/cmake/Help/guide/tutorial/index.html
-
-- **VS Code Dev Docker container** - Docker контейнер, который содержит полностью настроенное окружение для выполнение задания. Подробнее об этой функциональности:
-  - https://habr.com/ru/articles/822707/ - "Почти все, что вы хотели бы знать про Docker"
-  - https://code.visualstudio.com/docs/devcontainers/containers - официальная документация VS Code
-  - https://www.youtube.com/watch?v=p9L7YFqHGk4 - "Docker container for VS Code"
-  - https://www.youtube.com/watch?v=pg19Z8LL06w&t=174s&pp=ygUPRG9ja2VyY29udGFpbmVy - "Docker in 1 hour"
-
-### Команды для сборки проекта
-
-Используйте `F5` для выполнения следующих шагов:
-- Создание папки `build`
-- Вызов `conan` команд для установки требуемых библиотек и запуска процесса сборки
-- Запуска `lldb` отладчика
-
-Обратите внимание: при сборке проекта без изменений вы получите большую ошибку, содержащую ` note: the expression ‘enable_sender<typename stdexec:: ... [with _Sender = SfmlEventHandler]’ evaluated to ‘false’`. Вспомните, из-за чего может появиться такая ошибка при работе с `stdexec` и как мы решали похожую проблему в курсе.
-
-
-Также, вы можете запустить только команду построения проекта. Для этого:
-
-- вызовите командное окно, нажав `F1`
-
-- Выберите команду `Tasks: Run Task`
-
-![](misc/select_vscode_tasks.png)
-
-- Выберите команду сборки проекта, например `GCC: Build Debug app`
-
-![](misc/select_concrete_task.png)
-
-### Команды для запуска приложения
+### Run
 
 ```bash
-cd build
-./MandelbrotFractal
+./build/MandelbrotFractal
 ```
 
-### Команда для запуска тестов
+---
 
-Для запуска тестов вы можете воспользоваться удобным расширением `C++ TestMate`:
+## Project Goals
 
-![](misc/test_mate.png)
+This repository is intended for public use and review. It focuses on **code clarity, correctness, and architectural soundness** rather than visual effects or UI complexity.
 
-### Команда для запуска clang-format — обязательное требование перед сдачей работы на ревью
+This project was created to:
 
-В этом репозитории настроен автоматический запуск clang-format (файл конфигурации — .vscode/settings.json) при сохранении любого файла с кодом.
+* Explore **stdexec** beyond toy examples
+* Demonstrate **real‑world sender/receiver pipelines**
+* Show how modern C++ can replace callback‑driven async designs
+* Serve as a reference for **testable asynchronous architecture**
 
-Убедитесь, что эта функциональность работает:
-- Добавьте несколько пустых линий в любой файл.
-- Сохраните файл.
-- Если пустые линии были удалены, всё работает, если нет — убедитесь, что clangd работает (при открытии файла с кодом в самом низу VS Code на голубой полоске должно быть написано clangd: idle). Для этого:
-    - нажмите `F1` и выполните команду `clangd: Download language server`;
-    - нажмите `F1` и выполните команду `clangd: Restart language server`;
-    - нажмите `F1` и выполните команду `Developer: Reload Window`.
+---
 
-### Команды для запуска отладчика
+## License
 
-В Visual Studio Code настройки параметров для запуска отладчика находятся в файле .vscode/launch.json. Поскольку в этом файле для запуска приложения уже есть одна конфигурация `Launch *`, то для запуска отладчика достаточно нажать F5 или открыть окно Run and Debug комбинацией клавиш `Ctrl+Shift+D`.
+MIT License
 
-## Дополнительно
+---
 
-Для настройки автодополнения `Ctrl + Space` нажмите `F1` и выполните команду `clangd: Download language server`. VS Code сам предложит установить подходящую версию clangd (всплывашка в правом нижнем углу). После завершения установки перезагрузите окно кнопкой перезапуска справа снизу или с помощью `F1` и выполните команду `Developer: Reload Window`.
+*Built with modern C++ and a strong preference for explicit execution over hidden control flow.*
 
-Если всё сделали правильно, то после успешной сборки проекта вы сможете использовать автодополнение.
-
-![Скриншот 2](misc/clangd_1.png)
-
-![Скриншот 3](misc/clangd_2.png)
