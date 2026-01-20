@@ -40,11 +40,11 @@ RUN apt update && apt install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # NVIDIA stdexec library
-RUN git clone --branch main https://github.com/NVIDIA/stdexec.git /tmp/stdexec && \
+RUN git clone https://github.com/NVIDIA/stdexec.git /tmp/stdexec && \
     cmake -S /tmp/stdexec -B /tmp/stdexec/build \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_BUILD_EXAMPLES=OFF \
-          -DCMAKE_BUILD_TESTS=OFF && \
+          -DSTDEXEC_ENABLE_TESTING=OFF \
+          -DSTDEXEC_BUILD_EXAMPLES=OFF && \
     cmake --build /tmp/stdexec/build -j$(nproc) && \
     cmake --install /tmp/stdexec/build && \
     rm -rf /tmp/stdexec
