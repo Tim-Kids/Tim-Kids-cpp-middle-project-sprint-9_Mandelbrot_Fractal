@@ -1,22 +1,8 @@
-# Folders
-*.cache/
-*build/
+cmake-build*
 .idea/
-.vs/
-
-# Files
-CMakeUserPresets.json
-*.swp
-*.swo
-*.user
-*.userossc
-*.log
-*.tmp
-*.bak
-*.old
-
-# Other
-.DS_Store
-Thumbs.db
-ehthumbs.db
-desktop.ini
+.vscode/
+.cache/
+.githooks
+.devcontainer
+conanfile.py
+clion*

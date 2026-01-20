@@ -15,31 +15,16 @@ endif()
 
 # Ищем необходимые библиотеки
 find_package(GTest REQUIRED)
+find_package(Matplot++ REQUIRED)
+find_package(stdexec REQUIRED)
 find_package(SFML COMPONENTS graphics window system REQUIRED)
-
-include(FetchContent)
-FetchContent_Declare(
-  CPM
-  GIT_REPOSITORY https://github.com/cpm-cmake/CPM.cmake
-  GIT_TAG origin/master
-)
-FetchContent_MakeAvailable(CPM)
-
-CPMAddPackage(
-    NAME stdexec
-    GITHUB_REPOSITORY NVIDIA/stdexec
-    GIT_TAG main # This will always pull the latest code from the `main` branch. You may also use a specific release version or tag
-    OPTIONS
-        "STDEXEC_BUILD_EXAMPLES OFF"
-        "STDEXEC_BUILD_TESTS OFF"
-)
 
 file(GLOB HEADER_FILES "${CMAKE_SOURCE_DIR}/include/*.hpp")
 file(GLOB SRC_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 list(REMOVE_ITEM SRC_FILES "${CMAKE_SOURCE_DIR}/src/main.cpp")
 
 # Создаём статическую библиотеку
-add_library(${PROJECT_NAME}_imp STATIC "${CMAKE_SOURCE_DIR}/src/main.cpp" ${SRC_FILES} ${HEADER_FILES})
+add_library(${PROJECT_NAME}_imp STATIC ${SRC_FILES} ${HEADER_FILES})
 
 # Добавляем в проект используемые сторонние PRIVATE
 target_include_directories(${PROJECT_NAME}_imp PUBLIC
@@ -47,14 +32,16 @@ target_include_directories(${PROJECT_NAME}_imp PUBLIC
     ${stdexec_SOURCE_DIR}/include
     ${SFML_INCLUDE_DIR}
 )
-message(STATUS "matplotplusplus_SOURCE_DIR = ${matplotplusplus_SOURCE_DIR}")
+
 target_link_libraries(${PROJECT_NAME}_imp PUBLIC
-    STDEXEC::stdexec
+    STDEXEC::stdexec Matplot++::matplot
     sfml-graphics sfml-window sfml-system)
 
 # Создаём исполняемый таргет и линкуем к нему статическую библиотеку
 add_executable(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/src/main.cpp")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${PROJECT_NAME}_imp)
+
+add_executable(blueprint ${CMAKE_CURRENT_SOURCE_DIR}/blueprint/blueprint.cpp)
 
 #
 # Тесты
@@ -65,12 +52,12 @@ file(GLOB TEST_SRC_FILES "${CMAKE_SOURCE_DIR}/tests/*.cpp")
 add_executable(unit_tests "${TEST_SRC_FILES}")
 target_link_libraries(unit_tests PRIVATE
     ${PROJECT_NAME}_imp
-    GTest::GTest
-    GTest::Main
+    gtest
+    gtest_main
     STDEXEC::stdexec
     sfml-graphics sfml-window sfml-system)
 
-target_include_directories(unit_tests PUBLIC 
+target_include_directories(unit_tests PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${stdexec_SOURCE_DIR}/include
     ${matplotplusplus_SOURCE_DIR}/source)
