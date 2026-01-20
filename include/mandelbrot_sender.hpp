@@ -18,8 +18,6 @@ namespace rs = std::ranges;
     // Возвращает PixelMatrix - итерации для каждого пикселя. Далее в Renderer эти итерации преобразуются в цвета.
     template<typename Receiver>
     struct MandelbrotOperationState {
-        using operation_state_concept = STDEXEC::operation_state_t;
-
         Receiver receiver_;
         mandelbrot::ViewPort viewport_;
         RenderSettings settings_;
@@ -97,7 +95,7 @@ struct MandelbrotSender {
     mandelbrot::ViewPort viewport_;
     RenderSettings settings_;
     PixelRegion region_;
-    bool need_rerender_;
+    bool need_rerender_{};
 
     template<typename Env>
     static auto get_completion_signatures(const Env&) {
